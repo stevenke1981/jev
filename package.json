@@ -1,0 +1,17 @@
+{
+  "name": "jev",
+  "version": "0.1.0",
+  "description": "Mid-task reasoning-effort router for Codex: more thinking when stuck, less for routine steps.",
+  "type": "module",
+  "bin": {
+    "jev": "bin/jev.js"
+  },
+  "scripts": {
+    "start": "node bin/jev.js serve",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.15"
+  },
+  "license": "MIT"
+}
