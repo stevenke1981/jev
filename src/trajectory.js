@@ -6,7 +6,7 @@ const VERIFY_CMD = /^(?:(?:npx|uv\s+run|poetry\s+run|python3?\s+-m|py\s+-m|\.ven
 // Search tools exit 1 for "no match"; that is an answer, not a failure.
 const NO_MATCH_EXIT1 = /^(rg|grep|ag|git\s+grep|diff|git\s+diff|Select-String)\b/i;
 // Case-sensitive on purpose: "failed" in ordinary output is not a failure signal.
-const FAILURE_TEXT = /Traceback \(most recent call last\)|\bpanicked at\b|error\[E\d+\]|npm ERR!|command not found|is not recognized as an internal|No such file or directory|AssertionError|^FAILED\b|\b[1-9]\d* failed\b|^error:|^\S*(SyntaxError|TypeError|ModuleNotFoundError)\b|^fatal:/m;
+const FAILURE_TEXT = /\b(exec_command|apply_patch|tool) failed\b|rejected: blocked by policy|\bsandbox (denied|error)\b|Permission denied|Access is denied|^aborted by user|timed out after|Traceback \(most recent call last\)|\bpanicked at\b|error\[E\d+\]|npm ERR!|command not found|is not recognized as an internal|No such file or directory|AssertionError|^FAILED\b|\b[1-9]\d* failed\b|^error:|^\S*(SyntaxError|TypeError|ModuleNotFoundError)\b|^fatal:/m;
 const EXIT_CODE = /(?:Exit code:|exited with code|"exit_code"\s*:)\s*(-?\d+)/i;
 const STILL_RUNNING = /Process running with session ID/i;
 const SYNTHETIC_USER = /^(<(environment_context|user_instructions|user_shell_command|turn_aborted|subagent_notification|skill|INSTRUCTIONS)\b|# AGENTS\.md)/;
