@@ -2,6 +2,8 @@
 
 > More thinking when stuck. Less for routine steps.
 
+> **想讓 proxy 自動挑模型？** 姊妹專案 [jev-sol-terra](https://github.com/stevenke1981/jev-sol-terra) 會在每一步自動選 GPT-6.1 Sol（困難程式碼、深入問題）或 GPT-6.1 Terra（交代的事情、computer use），並決定 low～xhigh 的 effort。兩者是不同的 repo 與指令：在這個資料夾執行 `npm link` 只會註冊 `jev-effort`。要用 `jev-sol-terra`，請 clone 該 repo，在它的資料夾執行 `npm link`。兩者可同時執行（8787 與 8788）。
+
 一般做法是任務開始前選好模型和 effort；Jev 則在 **Codex 任務進行中、每一次 generation 前**
 重新決定 `reasoning.effort`：
 
