@@ -6,12 +6,13 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../src/config.js';
 import { createProxy } from '../src/proxy.js';
-import { formatDecision, readDecisions } from '../src/log.js';
+import { formatDecision, readDecisions, usageTokens } from '../src/log.js';
 
-const HELP = `jev-effort — mid-task reasoning-effort router for Codex
+const HELP = `jev-effort — mid-task reasoning-effort router for Codex and Chat Completions clients
 
 Usage:
   jev-effort serve              Run the proxy in the foreground (shows live decisions)
+                                (opencode/aider/crush: base URL http://127.0.0.1:8787/v1)
   jev-effort install [--force]  Write the "jev" Codex profile ($CODEX_HOME/jev.config.toml)
   jev-effort codex [args...]    Start the proxy if needed, then run: codex -p jev [args...]
   jev-effort tail               Follow routing decisions as they happen
@@ -137,8 +138,9 @@ function stats(config) {
   for (const r of rows) {
     const s = (by[r.effort] ??= { gens: 0, reasoning: 0, output: 0 });
     s.gens++;
-    s.reasoning += r.usage?.output_tokens_details?.reasoning_tokens ?? 0;
-    s.output += r.usage?.output_tokens ?? 0;
+    const t = usageTokens(r.usage);
+    s.reasoning += t.reasoning ?? 0;
+    s.output += t.output ?? 0;
   }
   console.log(`${rows.length} generations, ${new Set(rows.map((r) => r.session)).size} sessions`);
   for (const effort of config.ladder.filter((e) => by[e])) {

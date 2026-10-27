@@ -1,9 +1,11 @@
-// Transparent Responses API proxy that rewrites only `reasoning.effort`, so the
-// prompt prefix (and therefore prompt caching) is untouched.
+// Transparent Responses / Chat Completions proxy that rewrites only the reasoning
+// effort, so the prompt prefix (and therefore prompt caching) is untouched.
 import http from 'node:http';
 import zlib from 'node:zlib';
 import { createRouter } from './router.js';
-import { createDecisionLog, formatDecision } from './log.js';
+import { parseTurn } from './trajectory.js';
+import { parseChatTurn, chatWantsReasoning, applyChatEffort, chatSessionKey } from './chat.js';
+import { createDecisionLog, formatDecision, usageTokens } from './log.js';
 
 const HOP_BY_HOP = new Set(['host', 'connection', 'keep-alive', 'transfer-encoding', 'content-length',
   'content-encoding', 'accept-encoding', 'proxy-connection', 'upgrade', 'te', 'trailer']);
@@ -46,7 +48,9 @@ export function isChatGptAuth(headers) {
 
 export function upstreamBase(config, headers) {
   if (config.upstream) return config.upstream.replace(/\/$/, '');
-  return isChatGptAuth(headers) ? config.chatgptUpstream : config.apiUpstream;
+  if (isChatGptAuth(headers)) return config.chatgptUpstream;
+  if (/^Bearer\s+sk-or-/.test(String(headers.authorization ?? ''))) return config.openrouterUpstream;
+  return config.apiUpstream;
 }
 
 // "/v1/responses?x" -> "<base>/responses?x"; refuses anything that would leave the base origin.
@@ -63,23 +67,65 @@ function sessionKeyOf(body, headers) {
   return String(body.prompt_cache_key ?? headers.session_id ?? headers.conversation_id ?? 'default');
 }
 
-// Watches the SSE stream for the final usage without buffering the whole response.
-function usageSniffer() {
+const MAX_JSON_SNIFF = 4 * 1024 * 1024;
+
+// Per-protocol hooks: how to read the trajectory, whether the request is a
+// reasoning request, and how to rewrite its effort.
+const PROTOCOLS = {
+  responses: {
+    parse: (body) => parseTurn(body.input),
+    wantsReasoning: (body) => body.reasoning != null && typeof body.reasoning === 'object',
+    apply: (body, effort) => ({ ...body, reasoning: { ...body.reasoning, effort } }),
+    session: sessionKeyOf,
+    judge: true,
+  },
+  chat: {
+    parse: (body) => parseChatTurn(body.messages),
+    wantsReasoning: chatWantsReasoning,
+    apply: applyChatEffort,
+    session: chatSessionKey,
+    // The LLM judge speaks the Responses API, which chat-only upstreams lack.
+    judge: false,
+  },
+};
+
+function isOpenRouter(base) {
+  return /(^|\.)openrouter\.ai$/i.test(new URL(base).hostname);
+}
+
+// Watches the response for the final usage without buffering an SSE stream:
+// Responses `response.completed`, a chat chunk's `usage`, or a plain JSON body.
+function usageSniffer(contentType) {
   const decoder = new TextDecoder();
+  const isJson = /application\/json/i.test(contentType ?? '');
   let pending = '';
   let usage = null;
   return {
     push(chunk) {
       pending += decoder.decode(chunk, { stream: true });
+      if (isJson) {
+        if (pending.length > MAX_JSON_SNIFF) pending = '';
+        return;
+      }
       const lines = pending.split('\n');
       pending = lines.pop();
       for (const line of lines) {
-        if (!line.startsWith('data:') || !line.includes('response.completed')) continue;
+        if (!line.startsWith('data:') || !line.includes('"usage"')) continue;
         try {
-          usage = JSON.parse(line.slice(5)).response?.usage ?? usage;
+          const event = JSON.parse(line.slice(5));
+          usage = event.response?.usage ?? event.usage ?? usage;
         } catch {
           // Partial or non-JSON data line; ignore.
         }
+      }
+    },
+    finish() {
+      if (!isJson || !pending) return;
+      try {
+        const body = JSON.parse(pending);
+        usage = body.usage ?? body.response?.usage ?? usage;
+      } catch {
+        // Truncated or non-JSON body; no usage.
       }
     },
     get usage() {
@@ -127,7 +173,7 @@ export function createProxy(config, deps = {}) {
   const print = deps.print ?? ((s) => process.stdout.write(`${s}\n`));
   const stats = { requests: 0, routed: 0, byEffort: {}, reasoningTokens: {} };
 
-  async function handleResponses(req, res, raw) {
+  async function handleRouted(req, res, raw, protocol) {
     const base = upstreamBase(config, req.headers);
     const url = upstreamUrl(base, req.url);
     let body;
@@ -140,10 +186,13 @@ export function createProxy(config, deps = {}) {
     }
 
     let decision = null;
-    if (config.mode !== 'off' && body.reasoning && typeof body.reasoning === 'object') {
-      const headers = forwardHeaders(req.headers);
-      decision = await router.route(body, sessionKeyOf(body, req.headers), { url, headers });
-      body = { ...body, reasoning: { ...body.reasoning, effort: decision.effort } };
+    const session = protocol.session(body, req.headers);
+    // OpenRouter drops reasoning params a model lacks, so chat requests there are routed even without one.
+    const inject = protocol === PROTOCOLS.chat && isOpenRouter(base);
+    if (config.mode !== 'off' && (protocol.wantsReasoning(body) || inject)) {
+      const judgeTarget = protocol.judge ? { url, headers: forwardHeaders(req.headers) } : null;
+      decision = await router.route(body, session, judgeTarget, protocol.parse(body));
+      body = protocol.apply(body, decision.effort, inject);
       stats.routed++;
       stats.byEffort[decision.effort] = (stats.byEffort[decision.effort] ?? 0) + 1;
       if (!config.quiet) print(formatDecision(decision));
@@ -155,16 +204,17 @@ export function createProxy(config, deps = {}) {
       body: JSON.stringify(body),
       signal: abortOnClose(res),
     });
-    const sniff = usageSniffer();
+    const sniff = usageSniffer(upstream.headers.get('content-type'));
     await pipeUpstream(res, upstream, (c) => sniff.push(c));
+    sniff.finish();
 
     if (decision) {
-      const reasoning = sniff.usage?.output_tokens_details?.reasoning_tokens ?? null;
+      const { reasoning } = usageTokens(sniff.usage);
       if (reasoning != null) {
         stats.reasoningTokens[decision.effort] = (stats.reasoningTokens[decision.effort] ?? 0) + reasoning;
       }
       log.write({
-        ts: new Date().toISOString(), model: body.model, session: sessionKeyOf(body, req.headers),
+        ts: new Date().toISOString(), model: body.model, session, api: protocol === PROTOCOLS.chat ? 'chat' : 'responses',
         ...decision, status: upstream.status, usage: sniff.usage,
       });
     }
@@ -178,7 +228,8 @@ export function createProxy(config, deps = {}) {
     }
     const raw = await readBody(req);
     const path = req.url.split('?')[0];
-    if (req.method === 'POST' && path.endsWith('/responses')) return handleResponses(req, res, raw);
+    if (req.method === 'POST' && path.endsWith('/responses')) return handleRouted(req, res, raw, PROTOCOLS.responses);
+    if (req.method === 'POST' && path.endsWith('/chat/completions')) return handleRouted(req, res, raw, PROTOCOLS.chat);
 
     const upstream = await fetch(upstreamUrl(upstreamBase(config, req.headers), req.url), {
       method: req.method,
