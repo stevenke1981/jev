@@ -51,13 +51,36 @@ codex -p jev             # 視窗 2：照常使用 Codex
 ChatGPT 登入（JWT / `chatgpt-account-id`）轉送至 `chatgpt.com/backend-api/codex`，
 API key（`sk-...`）轉送至 `api.openai.com/v1`。Jev 不讀取、不記錄任何憑證。
 
+## TypeSafe Jev 1.14 決策模式（`openrouter-jev` 分支）
+
+設定 `OPENROUTER_API_KEY` 後，預設改由 OpenRouter 上的
+[`typesafe/jev-1.14`](https://openrouter.ai/typesafe/jev-1.14) 決策。這是結構化決策模型，
+走 [Decisions API](https://openrouter.ai/docs/guides/community/jev) `POST /api/alpha/decisions`。
+每次 generation 前送出本輪軌跡摘要（`state`），並問兩題：
+
+| 題目 | 型別 | 用途 |
+|---|---|---|
+| `effort` | `score`（量尺即 `JEV_LEVELS`） | 四捨五入後即目標 effort |
+| `stuck` | `noul` | ≥0.75 鎖 2 步、≥0.5 鎖 1 步、<0.25 解除鎖定 |
+
+在信心低於 `JEV_MIN_CONFIDENCE`（預設 0.3）、逾時或 HTTP 錯誤時，改用本地 heuristic，不會擋住 Codex。
+實測結果：每次約 450–1100 ms、約 $0.00002（只計 input tokens）。
+
+```
+Jev  MEDIUM → HIGH  ✓ APPLIED
+     Step 3 · next 2 generation(s) · 488 ms · jev score 1.99 (conf 0.98), stuck 0.96
+```
+
 ## 設定（環境變數）
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
 | `JEV_PORT` / `JEV_HOST` | `8787` / `127.0.0.1` | 監聽位址（改 port 後需重跑 `jev install`） |
 | `JEV_LEVELS` | `low,medium,high` | effort 階梯，可用 `minimal`…`xhigh`，例：`low,medium,high,xhigh` |
-| `JEV_MODE` | `heuristic` | `heuristic`（0 ms 規則）、`llm`（小模型判官，失敗退回規則）、`off`（純轉送） |
+| `JEV_MODE` | 有 key 時 `jev`，否則 `heuristic` | `jev`（TypeSafe Jev 1.14）、`heuristic`（0 ms 規則）、`llm`（小模型判官）、`off`（純轉送） |
+| `OPENROUTER_API_KEY` | — | `jev` 模式必填 |
+| `JEV_DECISION_MODEL` | `typesafe/jev-1.14` | 可改 `~typesafe/jev-latest` 或 `typesafe/jev-1.13` |
+| `JEV_MIN_CONFIDENCE` | `0.3` | Jev `effort` 信心低於此值就改用 heuristic |
 | `JEV_JUDGE_MODEL` | 同請求模型 | `llm` 模式的判官模型 |
 | `JEV_JUDGE_TIMEOUT_MS` | `2500` | 判官逾時即退回規則 |
 | `JEV_UPSTREAM` | 依憑證自動 | 強制指定上游 base URL |
@@ -91,4 +114,5 @@ npm test     # node --test：policy、trajectory、proxy（含 zstd、judge 退�
 
 | 版本 | 日期 | 內容 | 影響範圍 |
 |------|------|------|----------|
+| v0.2.0 | 2026-10-27 | 新增 `jev` 模式：OpenRouter Decisions API + `typesafe/jev-1.14`（score/noul），失敗時改用 heuristic；`stats` 顯示 Jev 費用 | config, router, decisions, bin |
 | v0.1.0 | 2026-10-27 | 初始建立：heuristic/LLM 路由、hysteresis、proxy、CLI、測試；並修正獨立審查所列問題（搜尋無匹配不算失敗、圖片訊息、SSE 背壓、URL 來源檢查、Windows 不經 shell 啟動 codex） | 全部 |

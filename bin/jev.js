@@ -140,7 +140,10 @@ function stats(config) {
     s.reasoning += r.usage?.output_tokens_details?.reasoning_tokens ?? 0;
     s.output += r.usage?.output_tokens ?? 0;
   }
-  console.log(`${rows.length} generations, ${new Set(rows.map((r) => r.session)).size} sessions`);
+  const jevCost = rows.reduce((sum, r) => sum + (r.cost ?? 0), 0);
+  const jevCalls = rows.filter((r) => r.source === 'jev').length;
+  console.log(`${rows.length} generations, ${new Set(rows.map((r) => r.session)).size} sessions, `
+    + `${jevCalls} routed by Jev ($${jevCost.toFixed(6)})`);
   for (const effort of config.ladder.filter((e) => by[e])) {
     const s = by[effort];
     console.log(`  ${effort.padEnd(7)} ${String(s.gens).padStart(5)} gens  ${String(Math.round(s.reasoning / s.gens)).padStart(6)} avg reasoning tok  ${s.output} output tok`);

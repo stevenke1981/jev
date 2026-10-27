@@ -22,8 +22,13 @@ function intEnv(env, name, fallback) {
 
 export function loadConfig(env = process.env) {
   const home = env.JEV_HOME || path.join(os.homedir(), '.jev');
-  const mode = (env.JEV_MODE || 'heuristic').toLowerCase();
-  if (!['heuristic', 'llm', 'off'].includes(mode)) throw new Error(`JEV_MODE must be heuristic|llm|off; got "${mode}"`);
+  const openrouterKey = env.OPENROUTER_API_KEY || '';
+  // With an OpenRouter key the TypeSafe Jev decision model routes by default.
+  const mode = (env.JEV_MODE || (openrouterKey ? 'jev' : 'heuristic')).toLowerCase();
+  if (!['jev', 'heuristic', 'llm', 'off'].includes(mode)) throw new Error(`JEV_MODE must be jev|heuristic|llm|off; got "${mode}"`);
+  if (mode === 'jev' && !openrouterKey) throw new Error('JEV_MODE=jev needs OPENROUTER_API_KEY');
+  const minConfidence = Number(env.JEV_MIN_CONFIDENCE ?? 0.3);
+  if (!(minConfidence >= 0 && minConfidence <= 1)) throw new Error(`JEV_MIN_CONFIDENCE must be 0..1; got "${env.JEV_MIN_CONFIDENCE}"`);
   return Object.freeze({
     host: env.JEV_HOST || '127.0.0.1',
     port: intEnv(env, 'JEV_PORT', 8787),
@@ -36,6 +41,10 @@ export function loadConfig(env = process.env) {
     judgeModel: env.JEV_JUDGE_MODEL || '',
     judgeEffort: env.JEV_JUDGE_EFFORT || 'low',
     judgeTimeoutMs: intEnv(env, 'JEV_JUDGE_TIMEOUT_MS', 2500),
+    openrouterKey,
+    decisionModel: env.JEV_DECISION_MODEL || 'typesafe/jev-1.14',
+    decisionUrl: env.JEV_DECISION_URL || 'https://openrouter.ai/api/alpha/decisions',
+    minConfidence,
     home,
     logFile: path.join(home, 'decisions.jsonl'),
     quiet: env.JEV_QUIET === '1',

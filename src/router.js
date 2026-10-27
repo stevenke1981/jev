@@ -2,10 +2,11 @@
 import { parseTurn } from './trajectory.js';
 import { assess, nextState } from './policy.js';
 import { judge } from './judge.js';
+import { jevDecide } from './decisions.js';
 
 const MAX_SESSIONS = 500;
 
-export function createRouter(config, { judgeFn = judge } = {}) {
+export function createRouter(config, { judgeFn = judge, decideFn = jevDecide } = {}) {
   const sessions = new Map();
 
   function remember(key, state) {
@@ -27,8 +28,28 @@ export function createRouter(config, { judgeFn = judge } = {}) {
     const ladder = config.ladder;
     let a = assess(turn, ladder);
     let source = 'heuristic';
+    let cost = null;
+    const prev = sessions.get(sessionKey);
 
-    if (config.mode === 'llm' && judgeTarget && step > 1) {
+    if (config.mode === 'jev') {
+      try {
+        const d = await decideFn(turn, {
+          url: config.decisionUrl,
+          apiKey: config.openrouterKey,
+          model: config.decisionModel,
+          timeoutMs: config.judgeTimeoutMs,
+          ladder,
+          minConfidence: config.minConfidence,
+          sessionId: sessionKey,
+          currentEffort: prev && step > 1 ? ladder[prev.level] : null,
+        });
+        cost = d.cost;
+        a = d;
+        source = 'jev';
+      } catch (err) {
+        source = `heuristic (jev failed: ${err.message})`;
+      }
+    } else if (config.mode === 'llm' && judgeTarget && step > 1) {
       try {
         a = await judgeFn(turn, {
           ...judgeTarget,
@@ -43,7 +64,7 @@ export function createRouter(config, { judgeFn = judge } = {}) {
       }
     }
 
-    const state = nextState(sessions.get(sessionKey), a, step);
+    const state = nextState(prev, a, step);
     remember(sessionKey, state);
     return {
       effort: ladder[state.level],
@@ -52,6 +73,7 @@ export function createRouter(config, { judgeFn = judge } = {}) {
       hold: state.hold,
       reasons: state.reasons,
       source,
+      cost,
       ms: Math.round(performance.now() - started),
     };
   }
