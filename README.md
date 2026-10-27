@@ -52,6 +52,7 @@ codex -p jev             # 視窗 2：照常使用 Codex
 ```powershell
 jev-effort status      # 顯示執行中 proxy 的版本，與磁碟上的程式碼比對；過舊或未執行時 exit 1
 jev-effort --version   # 磁碟上程式碼的版本與 build
+jev-effort stop        # 停止執行中的 proxy（含 `jev-effort codex` 在背景啟動、沒有視窗的那個）
 ```
 
 `jev-effort codex` 遇到過舊的 proxy 會發出警告，`jev-effort serve` 遇到 port 被占用時，會說明占用的是不是舊版 Jev。
@@ -191,6 +192,7 @@ npm test     # node --test：policy、trajectory、proxy（含 zstd、judge 退�
 
 | 版本 | 日期 | 內容 | 影響範圍 |
 |------|------|------|----------|
+| v0.5.0 | 2026-10-27 | 新增 `jev-effort stop`：依 `/jev/health` 回報的 PID 停止 proxy，並等到 port 釋放；太舊、不回報 PID 的 proxy 會提示手動停止的指令 | bin |
 | v0.4.0 | 2026-10-27 | 新增版本檢查：`/jev/health` 回報 version/build/pid/startedAt；新增 `jev-effort status`、`--version`；`codex` 與 `serve` 偵測過舊的 proxy | version, proxy, bin |
 | v0.3.0 | 2026-10-27 | 新增 `/chat/completions` 代理，供 opencode、aider、crush 使用；`sk-or-` 金鑰自動走 OpenRouter；`stats` 支援 chat usage；以 opencode 1.19.3 實測 | chat, proxy, router, config, log, bin |
 | v0.2.0 | 2026-10-27 | 新增 `jev` 模式：OpenRouter Decisions API + `typesafe/jev-1.14`（score/noul），失敗時改用 heuristic；`stats` 顯示 Jev 費用 | config, router, decisions, bin |
