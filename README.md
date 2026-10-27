@@ -29,23 +29,23 @@ Jev  HIGH → MEDIUM  ✓ APPLIED
 
 ```powershell
 cd D:\jev
-npm link                 # 取得 `jev` 指令（或直接 node bin/jev.js ...）
-jev install              # 寫入 ~/.codex/jev.config.toml（Codex 的 `-p jev` profile）
+npm link                 # 取得 `jev-effort` 指令（或直接 node bin/jev.js ...）
+jev-effort install              # 寫入 ~/.codex/jev.config.toml（Codex 的 `-p jev` profile）
 ```
 
 兩種用法：
 
 ```powershell
 # A. 一鍵：背景啟動 proxy，再執行 codex -p jev
-jev codex
-jev codex exec "inspect this repo and find bugs"
+jev-effort codex
+jev-effort codex exec "inspect this repo and find bugs"
 
 # B. 想像影片一樣看到即時決策：開兩個視窗
-jev serve                # 視窗 1：顯示每一步的 Jev 決策
+jev-effort serve                # 視窗 1：顯示每一步的 Jev 決策
 codex -p jev             # 視窗 2：照常使用 Codex
 ```
 
-其他：`jev tail` 即時追蹤決策、`jev stats` 統計各 effort 的 generation 數與 reasoning tokens。
+其他：`jev-effort tail` 即時追蹤決策、`jev-effort stats` 統計各 effort 的 generation 數與 reasoning tokens。
 
 `jev.config.toml` 使用 `requires_openai_auth = true`，沿用 Codex 現有登入：
 ChatGPT 登入（JWT / `chatgpt-account-id`）轉送至 `chatgpt.com/backend-api/codex`，
@@ -55,7 +55,7 @@ API key（`sk-...`）轉送至 `api.openai.com/v1`。Jev 不讀取、不記錄�
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `JEV_PORT` / `JEV_HOST` | `8787` / `127.0.0.1` | 監聽位址（改 port 後需重跑 `jev install`） |
+| `JEV_PORT` / `JEV_HOST` | `8787` / `127.0.0.1` | 監聽位址（改 port 後需重跑 `jev-effort install`） |
 | `JEV_LEVELS` | `low,medium,high` | effort 階梯，可用 `minimal`…`xhigh`，例：`low,medium,high,xhigh` |
 | `JEV_MODE` | `heuristic` | `heuristic`（0 ms 規則）、`llm`（小模型判官，失敗退回規則）、`off`（純轉送） |
 | `JEV_JUDGE_MODEL` | 同請求模型 | `llm` 模式的判官模型 |
@@ -79,7 +79,7 @@ API key（`sk-...`）轉送至 `api.openai.com/v1`。Jev 不讀取、不記錄�
 
 - 決策列印在 proxy 視窗，而非 Codex TUI 內（不修改 Codex 本體）。
 - 僅支援 HTTP Responses 傳輸；Codex 的 websocket 傳輸不經過 Jev。
-- 「省 50% 成本」為原貼文作者的數據；Jev 實際節省幅度請以 `jev stats` 於自身工作量量測。
+- 「省 50% 成本」為原貼文作者的數據；Jev 實際節省幅度請以 `jev-effort stats` 於自身工作量量測。
 
 ## 測試
 
