@@ -47,6 +47,15 @@ codex -p jev             # 視窗 2：照常使用 Codex
 
 其他：`jev-effort tail` 即時追蹤決策、`jev-effort stats` 統計各 effort 的 generation 數與 reasoning tokens。
 
+**更新後記得重啟 proxy。** 執行中的 `jev-effort serve` 不會自動載入新程式碼；舊 proxy 可能做出錯誤的轉送，例如把 `sk-or-` 金鑰送到 OpenAI。`/jev/health` 會回報 `version`、`build`（`src/`、`bin/`、`package.json` 內容的雜湊）、`pid`、`startedAt`：
+
+```powershell
+jev-effort status      # 顯示執行中 proxy 的版本，與磁碟上的程式碼比對；過舊或未執行時 exit 1
+jev-effort --version   # 磁碟上程式碼的版本與 build
+```
+
+`jev-effort codex` 遇到過舊的 proxy 會發出警告，`jev-effort serve` 遇到 port 被占用時，會說明占用的是不是舊版 Jev。
+
 `jev.config.toml` 使用 `requires_openai_auth = true`，沿用 Codex 現有登入：
 ChatGPT 登入（JWT / `chatgpt-account-id`）轉送至 `chatgpt.com/backend-api/codex`，
 API key（`sk-...`）轉送至 `api.openai.com/v1`。Jev 不讀取、不記錄任何憑證。
@@ -134,6 +143,7 @@ reasoning tokens：MEDIUM 183、LOW 83。session 為 opencode 自己的 `ses_...
 | `src/chat.js` | Chat Completions：從 `messages` 擷取本輪軌跡、改寫或注入 effort、辨識 session |
 | `src/judge.js` | 選用的 LLM 判官 |
 | `src/router.js` | 依 `prompt_cache_key` 保存各 session 狀態 |
+| `src/version.js` | 版本與 build 指紋；`compareBuild()` 判斷執行中的 proxy 是否過舊 |
 | `src/proxy.js` | HTTP proxy：解壓（zstd/gzip/br）、改寫 effort、串流回傳、擷取 usage |
 | `bin/jev.js` | CLI |
 
@@ -155,5 +165,6 @@ npm test     # node --test：policy、trajectory、proxy（含 zstd、judge 退�
 
 | 版本 | 日期 | 內容 | 影響範圍 |
 |------|------|------|----------|
+| v0.4.0 | 2026-10-27 | 新增版本檢查：`/jev/health` 回報 version/build/pid/startedAt；新增 `jev-effort status`、`--version`；`codex` 與 `serve` 偵測過舊的 proxy | version, proxy, bin |
 | v0.3.0 | 2026-10-27 | 新增 `/chat/completions` 代理，供 opencode、aider、crush 使用；`sk-or-` 金鑰自動走 OpenRouter；`stats` 支援 chat usage；以 opencode 1.19.3 實測 | chat, proxy, router, config, log, bin |
 | v0.1.0 | 2026-10-27 | 初始建立：heuristic/LLM 路由、hysteresis、proxy、CLI、測試；並修正獨立審查所列問題（搜尋無匹配不算失敗、圖片訊息、SSE 背壓、URL 來源檢查、Windows 不經 shell 啟動 codex） | 全部 |

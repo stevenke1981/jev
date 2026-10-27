@@ -6,6 +6,7 @@ import { createRouter } from './router.js';
 import { parseTurn } from './trajectory.js';
 import { parseChatTurn, chatWantsReasoning, applyChatEffort, chatSessionKey } from './chat.js';
 import { createDecisionLog, formatDecision, usageTokens } from './log.js';
+import { VERSION, BUILD } from './version.js';
 
 const HOP_BY_HOP = new Set(['host', 'connection', 'keep-alive', 'transfer-encoding', 'content-length',
   'content-encoding', 'accept-encoding', 'proxy-connection', 'upgrade', 'te', 'trailer']);
@@ -172,6 +173,7 @@ export function createProxy(config, deps = {}) {
   const log = deps.log ?? createDecisionLog(config);
   const print = deps.print ?? ((s) => process.stdout.write(`${s}\n`));
   const stats = { requests: 0, routed: 0, byEffort: {}, reasoningTokens: {} };
+  const identity = { version: VERSION, build: BUILD, pid: process.pid, startedAt: new Date().toISOString() };
 
   async function handleRouted(req, res, raw, protocol) {
     const base = upstreamBase(config, req.headers);
@@ -224,7 +226,7 @@ export function createProxy(config, deps = {}) {
     stats.requests++;
     if (req.url === '/jev/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, mode: config.mode, ladder: config.ladder, stats }));
+      return res.end(JSON.stringify({ ok: true, ...identity, mode: config.mode, ladder: config.ladder, stats }));
     }
     const raw = await readBody(req);
     const path = req.url.split('?')[0];

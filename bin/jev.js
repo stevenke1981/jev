@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../src/config.js';
 import { createProxy } from '../src/proxy.js';
 import { formatDecision, readDecisions, usageTokens } from '../src/log.js';
+import { VERSION, BUILD, compareBuild } from '../src/version.js';
 
 const HELP = `jev-effort — mid-task reasoning-effort router for Codex and Chat Completions clients
 
@@ -17,6 +18,8 @@ Usage:
   jev-effort codex [args...]    Start the proxy if needed, then run: codex -p jev [args...]
   jev-effort tail               Follow routing decisions as they happen
   jev-effort stats              Summarize past decisions and reasoning tokens per effort
+  jev-effort status             Show the running proxy's version and whether it is stale
+  jev-effort --version          Print the version and build of the code on disk
 
 Environment:
   JEV_PORT (8787)  JEV_LEVELS (low,medium,high)  JEV_MODE (heuristic|llm|off)
@@ -47,17 +50,27 @@ function install(config, force) {
   console.log(`wrote ${file}\nrun: jev-effort codex   (or start "jev-effort serve" and use: codex -p jev)`);
 }
 
-async function healthy(config) {
+/** @returns {Promise<object|null>} the running proxy's /jev/health payload, or null */
+async function probe(config) {
   try {
     const res = await fetch(`http://${config.host}:${config.port}/jev/health`, { signal: AbortSignal.timeout(500) });
-    return res.ok;
+    return res.ok ? await res.json() : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
+async function healthy(config) {
+  return (await probe(config)) != null;
+}
+
 async function ensureProxy(config) {
-  if (await healthy(config)) return;
+  const running = await probe(config);
+  if (running) {
+    const check = compareBuild(running);
+    if (check.status === 'stale') console.error(`jev: warning: ${check.message}`);
+    return;
+  }
   fs.mkdirSync(config.home, { recursive: true });
   const out = fs.openSync(path.join(config.home, 'proxy.log'), 'a');
   const self = fileURLToPath(import.meta.url);
@@ -97,14 +110,33 @@ async function runCodex(config, args) {
 
 function serve(config) {
   const { server } = createProxy(config);
-  server.on('error', (err) => {
-    const hint = err.code === 'EADDRINUSE' ? ` (port ${config.port} in use; is jev already running? set JEV_PORT)` : '';
+  server.on('error', async (err) => {
+    let hint = '';
+    if (err.code === 'EADDRINUSE') {
+      const running = await probe(config);
+      hint = running
+        ? `; a jev proxy is already there: ${compareBuild(running).message}`
+        : ` (port ${config.port} in use by something else; set JEV_PORT)`;
+    }
     console.error(`jev: ${err.message}${hint}`);
     process.exit(1);
   });
   server.listen(config.port, config.host, () => {
-    console.log(`jev listening on http://${config.host}:${config.port}/v1  mode=${config.mode}  ladder=${config.ladder.join('→')}`);
+    console.log(`jev v${VERSION} (build ${BUILD}) listening on http://${config.host}:${config.port}/v1  `
+      + `mode=${config.mode}  ladder=${config.ladder.join('→')}`);
   });
+}
+
+async function status(config) {
+  const running = await probe(config);
+  if (!running) {
+    console.log(`no jev proxy on http://${config.host}:${config.port} (code on disk: v${VERSION} build ${BUILD})`);
+    process.exitCode = 1;
+    return;
+  }
+  const check = compareBuild(running);
+  console.log(`${check.message}  mode=${running.mode}`);
+  if (check.status === 'stale') process.exitCode = 1;
 }
 
 function tail(config) {
@@ -158,6 +190,9 @@ async function main() {
     case 'codex': return runCodex(config, rest);
     case 'tail': return tail(config);
     case 'stats': return stats(config);
+    case 'status': return status(config);
+    case '--version':
+    case '-v': return console.log(`jev-effort v${VERSION} (build ${BUILD})`);
     default: console.log(HELP);
   }
 }
