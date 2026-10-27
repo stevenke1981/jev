@@ -71,6 +71,69 @@ Jev  MEDIUM → HIGH  ✓ APPLIED
      Step 3 · next 2 generation(s) · 488 ms · jev score 1.99 (conf 0.98), stuck 0.96
 ```
 
+
+## 其他 AI coding 終端（Chat Completions）
+
+Jev 也代理 `POST /v1/chat/completions`，所以 opencode、aider、crush 等走 OpenAI 相容介面的終端，
+把 base URL 指到 `http://127.0.0.1:8787/v1` 就能使用。Jev 從 `messages` 中讀出
+assistant 的 `tool_calls` 與 `role: "tool"` 回傳，判斷成敗的規則和 Codex 相同。
+
+- **上游**：`sk-or-...` 金鑰轉送至 `openrouter.ai/api/v1`，其他 `sk-...` 金鑰轉送至 `api.openai.com/v1`；
+  `JEV_UPSTREAM` 可強制指定。
+- **改寫哪個欄位**：請求原本帶 `reasoning_effort` 就改它，帶 `reasoning.effort` 就改那個。
+  上游是 OpenRouter 時，即使請求沒帶也會注入 `reasoning: {effort}`，因為 OpenRouter 會忽略模型不支援的參數。
+  其他上游若請求沒帶 effort，Jev 只轉送不改，以免不支援推理的模型回 400。
+- **Session**：依 `prompt_cache_key`、`user`、`session_id`/`x-session-id` 標頭的順序辨識；
+  都沒有時，以 model 加第一則 user 訊息的雜湊區分對話。
+- `messages` 原樣轉送，prompt cache 前綴不變。
+
+先在一個視窗執行 `jev-effort serve`，再設定終端：
+
+**opencode**（專案目錄的 `opencode.json`）：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "jev": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Jev (OpenRouter)",
+      "options": { "baseURL": "http://127.0.0.1:8787/v1", "apiKey": "{env:OPENROUTER_API_KEY}" },
+      "models": { "deepseek/deepseek-v4.1-flash-1017": { "name": "DeepSeek V4.1 Flash (Jev)" } }
+    }
+  }
+}
+```
+
+```powershell
+opencode run -m jev/deepseek/deepseek-v4.1-flash-1017 "..."   # 或在 TUI 用 /models 選 Jev
+```
+
+若全域設定為 agent 指定了別的模型，專案裡的 `"model"` 會被蓋過，請用 `-m` 明確指定。
+
+**aider**（litellm 的 `openai/` 前綴走 Chat Completions）：
+
+```powershell
+$env:OPENAI_API_BASE = "http://127.0.0.1:8787/v1"
+$env:OPENAI_API_KEY  = $env:OPENROUTER_API_KEY
+aider --model openai/deepseek/deepseek-v4.1-flash-1017
+```
+
+**crush**：在 `crush.json` 新增 `"type": "openai-compat"` provider，`base_url` 填 `http://127.0.0.1:8787/v1`。
+
+opencode 1.19.3 實測（DeepSeek V4.1 Flash via OpenRouter，唯讀任務）：
+
+```
+Jev  MEDIUM  ✓ APPLIED
+     Step 1 · next 1 generation(s) · 0 ms · hard task, planning
+Jev  MEDIUM → LOW  ✓ APPLIED
+     Step 2 · next 1 generation(s) · 0 ms · routine tool
+```
+
+reasoning tokens：MEDIUM 183、LOW 83。session 為 opencode 自己的 `ses_...` id。
+
+本分支的 `jev` 模式同樣適用於 Chat Completions。以上述同一個 opencode 任務實測，4 次 generation 都由 Jev 1.14 判為 LOW（score 0.02–0.08，conf 0.88–0.97），每次 548–1313 ms。
+
 ## 設定（環境變數）
 
 | 變數 | 預設 | 說明 |
@@ -84,6 +147,7 @@ Jev  MEDIUM → HIGH  ✓ APPLIED
 | `JEV_JUDGE_MODEL` | 同請求模型 | `llm` 模式的判官模型 |
 | `JEV_JUDGE_TIMEOUT_MS` | `2500` | 判官逾時即退回規則 |
 | `JEV_UPSTREAM` | 依憑證自動 | 強制指定上游 base URL |
+| `JEV_OPENROUTER_UPSTREAM` | `https://openrouter.ai/api/v1` | `sk-or-` 金鑰的上游 |
 | `JEV_HOME` | `~/.jev` | `decisions.jsonl`、`proxy.log` 位置 |
 | `JEV_QUIET` | — | `1` 則不印決策 |
 
@@ -93,6 +157,7 @@ Jev  MEDIUM → HIGH  ✓ APPLIED
 |---|---|
 | `src/trajectory.js` | 從 Responses `input` 擷取本輪（最後一則真人訊息之後）的工具呼叫與成敗 |
 | `src/policy.js` | `assess()` 判斷目標 effort；`nextState()` 加上鎖定（hold）與逐級回落 |
+| `src/chat.js` | Chat Completions：從 `messages` 擷取本輪軌跡、改寫或注入 effort、辨識 session |
 | `src/judge.js` | 選用的 LLM 判官 |
 | `src/router.js` | 依 `prompt_cache_key` 保存各 session 狀態 |
 | `src/proxy.js` | HTTP proxy：解壓（zstd/gzip/br）、改寫 effort、串流回傳、擷取 usage |
@@ -101,18 +166,21 @@ Jev  MEDIUM → HIGH  ✓ APPLIED
 ## 限制
 
 - 決策列印在 proxy 視窗，而非 Codex TUI 內（不修改 Codex 本體）。
-- 僅支援 HTTP Responses 傳輸；Codex 的 websocket 傳輸不經過 Jev。
+- 支援 HTTP 的 Responses 與 Chat Completions；Codex 的 websocket 傳輸不經過 Jev。
+- Chat Completions 請求不使用 `llm` 判官（判官走 Responses API），改用 heuristic。
+- aider 預設以文字 edit block 修改檔案，不經 tool call，因此 Jev 只能依 user 訊息判斷，例如 aider 自動送回的 lint 或測試錯誤。
 - 「省 50% 成本」為原貼文作者的數據；Jev 實際節省幅度請以 `jev-effort stats` 於自身工作量量測。
 
 ## 測試
 
 ```powershell
-npm test     # node --test：policy、trajectory、proxy（含 zstd、judge 退回）
+npm test     # node --test：policy、trajectory、proxy（含 zstd、judge 退回）、chat
 ```
 
 ## 變更歷史
 
 | 版本 | 日期 | 內容 | 影響範圍 |
 |------|------|------|----------|
+| v0.3.0 | 2026-10-27 | 新增 `/chat/completions` 代理，供 opencode、aider、crush 使用；`sk-or-` 金鑰自動走 OpenRouter；`stats` 支援 chat usage；以 opencode 1.19.3 實測 | chat, proxy, router, config, log, bin |
 | v0.2.0 | 2026-10-27 | 新增 `jev` 模式：OpenRouter Decisions API + `typesafe/jev-1.14`（score/noul），失敗時改用 heuristic；`stats` 顯示 Jev 費用 | config, router, decisions, bin |
 | v0.1.0 | 2026-10-27 | 初始建立：heuristic/LLM 路由、hysteresis、proxy、CLI、測試；並修正獨立審查所列問題（搜尋無匹配不算失敗、圖片訊息、SSE 背壓、URL 來源檢查、Windows 不經 shell 啟動 codex） | 全部 |

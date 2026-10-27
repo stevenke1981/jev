@@ -1,6 +1,6 @@
 {
   "name": "jev-effort-router",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Mid-task reasoning-effort router for Codex: more thinking when stuck, less for routine steps.",
   "type": "module",
   "bin": {

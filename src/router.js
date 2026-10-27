@@ -16,14 +16,14 @@ export function createRouter(config, { judgeFn = judge, decideFn = jevDecide } =
   }
 
   /**
-   * @param {object} body Responses API request body
+   * @param {object} body Responses or Chat Completions request body
    * @param {string} sessionKey
    * @param {{url:string, headers:Record<string,string>}|null} judgeTarget
+   * @param {object} [turn] parsed trajectory; defaults to the Responses `input`
    * @returns {Promise<{effort:string, from:string|null, step:number, hold:number, reasons:string[], source:string, ms:number}>}
    */
-  async function route(body, sessionKey, judgeTarget) {
+  async function route(body, sessionKey, judgeTarget, turn = parseTurn(body.input)) {
     const started = performance.now();
-    const turn = parseTurn(body.input);
     const step = turn.steps.length + 1;
     const ladder = config.ladder;
     let a = assess(turn, ladder);

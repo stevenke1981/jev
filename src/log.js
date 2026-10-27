@@ -36,3 +36,11 @@ export function readDecisions(file) {
     }
   });
 }
+
+// Responses reports `output_tokens_details`, Chat Completions `completion_tokens_details`.
+export function usageTokens(usage) {
+  return {
+    reasoning: usage?.output_tokens_details?.reasoning_tokens ?? usage?.completion_tokens_details?.reasoning_tokens ?? null,
+    output: usage?.output_tokens ?? usage?.completion_tokens ?? null,
+  };
+}

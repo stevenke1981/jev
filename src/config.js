@@ -34,10 +34,11 @@ export function loadConfig(env = process.env) {
     port: intEnv(env, 'JEV_PORT', 8787),
     ladder: parseLadder(env.JEV_LEVELS || 'low,medium,high'),
     mode,
-    // Fixed upstream; when unset the auth type picks ChatGPT backend vs API.
+    // Fixed upstream; when unset the auth type picks ChatGPT backend, OpenRouter or API.
     upstream: env.JEV_UPSTREAM || '',
     chatgptUpstream: env.JEV_CHATGPT_UPSTREAM || 'https://chatgpt.com/backend-api/codex',
     apiUpstream: env.JEV_API_UPSTREAM || 'https://api.openai.com/v1',
+    openrouterUpstream: env.JEV_OPENROUTER_UPSTREAM || 'https://openrouter.ai/api/v1',
     judgeModel: env.JEV_JUDGE_MODEL || '',
     judgeEffort: env.JEV_JUDGE_EFFORT || 'low',
     judgeTimeoutMs: intEnv(env, 'JEV_JUDGE_TIMEOUT_MS', 2500),

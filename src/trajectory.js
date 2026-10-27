@@ -30,7 +30,7 @@ export function textOf(value) {
 
 // Codex injects environment context and AGENTS.md as user-role messages; those
 // are not something the human typed.
-function isSyntheticUserText(text) {
+export function isSyntheticUserText(text) {
   const t = text.trimStart();
   return t.length === 0 || SYNTHETIC_USER.test(t);
 }
