@@ -87,6 +87,9 @@ test('review fixes: search no-match, images, "<" prompts, running processes, cla
   assert.equal(outputFailed('Process running with session ID 7\nOutput:\nretry failed requests'), null);
   assert.equal(outputFailed('Success. Updated the following files:\nM src/failed.ts'), false);
   assert.equal(outputFailed('rg: no', 'diff a b'), false);
+  // Codex sandbox rejections carry no exit code.
+  assert.equal(outputFailed('exec_command failed: CreateProcess { message: "Rejected(\\"`pwsh -Command ls` rejected: blocked by policy\\")" }'), true);
+  assert.equal(outputFailed('bash: ./run.sh: Permission denied'), true);
 
   const c = (cmd) => ({ type: 'function_call', name: 'shell', arguments: JSON.stringify({ command: ['bash', '-lc', cmd] }) });
   assert.equal(classifyCall(c('cat tests/foo.py')), 'read');
