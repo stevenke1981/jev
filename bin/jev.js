@@ -19,6 +19,7 @@ Usage:
   jev-effort tail               Follow routing decisions as they happen
   jev-effort stats              Summarize past decisions and reasoning tokens per effort
   jev-effort status             Show the running proxy's version and whether it is stale
+  jev-effort stop               Stop the running proxy (also one started in the background)
   jev-effort --version          Print the version and build of the code on disk
 
 Environment:
@@ -139,6 +140,40 @@ async function status(config) {
   if (check.status === 'stale') process.exitCode = 1;
 }
 
+const STOP_WAIT_MS = 3000;
+
+// Stops whichever jev proxy holds the port, including one started in the
+// background by `jev-effort codex`. The PID comes from /jev/health, so only a
+// process that answers as jev is ever signalled.
+async function stop(config) {
+  const running = await probe(config);
+  if (!running) {
+    console.log(`no jev proxy on http://${config.host}:${config.port}`);
+    return;
+  }
+  if (!Number.isInteger(running.pid)) {
+    console.error(`jev: the proxy on port ${config.port} predates "jev-effort stop" and does not report its PID; stop it with:\n`
+      + `  PowerShell: Stop-Process -Id (Get-NetTCPConnection -LocalPort ${config.port} -State Listen).OwningProcess\n`
+      + `  macOS/Linux: kill $(lsof -t -iTCP:${config.port} -sTCP:LISTEN)`);
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    process.kill(running.pid);
+  } catch (err) {
+    if (err.code !== 'ESRCH') throw new Error(`cannot stop pid ${running.pid}: ${err.message}`);
+  }
+  for (let waited = 0; waited < STOP_WAIT_MS; waited += 100) {
+    if (!(await healthy(config))) {
+      console.log(`stopped jev proxy (pid ${running.pid}, v${running.version} build ${running.build})`);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  console.error(`jev: pid ${running.pid} is still answering on port ${config.port} after ${STOP_WAIT_MS} ms`);
+  process.exitCode = 1;
+}
+
 function tail(config) {
   let size = fs.existsSync(config.logFile) ? fs.statSync(config.logFile).size : 0;
   console.log(`following ${config.logFile} (Ctrl+C to stop)`);
@@ -191,6 +226,7 @@ async function main() {
     case 'tail': return tail(config);
     case 'stats': return stats(config);
     case 'status': return status(config);
+    case 'stop': return stop(config);
     case '--version':
     case '-v': return console.log(`jev-effort v${VERSION} (build ${BUILD})`);
     default: console.log(HELP);
